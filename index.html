@@ -3,199 +3,222 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube カスタムループ再生</title>
+    <title>YouTube 自動ループ＆時間取得</title>
     <style>
         body {
-            font-family: sans-serif;
-            text-align: center;
-            background-color: #f0f0f0;
+            font-family: "Helvetica Neue", Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             padding: 20px;
+            margin: 0;
         }
+        h1 { font-size: 22px; margin-bottom: 20px; }
         .container {
+            width: 100%;
             max-width: 800px;
-            margin: 0 auto;
             background: white;
             padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
-        .video-wrapper {
-            position: relative;
-            padding-bottom: 56.25%; /* 16:9 aspect ratio */
-            height: 0;
-            overflow: hidden;
-            margin-bottom: 20px;
-            background: #000;
-        }
-        .video-wrapper iframe {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-        .controls {
+        .input-area {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 15px;
             margin-bottom: 20px;
-            text-align: left;
+            padding: 15px;
+            background: #eef2f5;
+            border-radius: 8px;
         }
-        .input-group {
-            display: flex;
-            flex-direction: column;
-        }
-        label {
-            font-weight: bold;
-            margin-bottom: 5px;
-            font-size: 0.9em;
-        }
+        .input-group { display: flex; flex-direction: column; }
+        .input-group.full-width { grid-column: span 2; }
+        
+        label { font-weight: bold; font-size: 13px; margin-bottom: 5px; color: #555; }
         input {
-            padding: 8px;
+            padding: 10px;
             border: 1px solid #ccc;
-            border-radius: 4px;
+            border-radius: 5px;
             font-size: 16px;
         }
+        /* 読み取り専用フィールドのスタイル */
+        input:read-only { background-color: #e0e0e0; color: #777; }
+
         button {
             grid-column: span 2;
             padding: 12px;
             background-color: #ff0000;
             color: white;
             border: none;
-            border-radius: 4px;
-            font-size: 18px;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
             cursor: pointer;
-            transition: background 0.3s;
+            transition: background 0.2s;
         }
-        button:hover {
-            background-color: #cc0000;
+        button:hover { background-color: #cc0000; }
+
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 */
+            height: 0;
+            overflow: hidden;
+            background: #000;
+            border-radius: 8px;
         }
-        .status {
-            margin-top: 10px;
-            color: #666;
-            font-size: 0.9em;
+        .video-container iframe {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
         }
+        .status { margin-top: 10px; text-align: right; font-size: 12px; color: #666; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h2>YouTube 区間リピート再生</h2>
-    
-    <div class="video-wrapper">
-        <div id="player"></div>
+    <div class="container">
+        <h1>YouTube 自動時間取得＆ループ再生</h1>
+
+        <div class="input-area">
+            <div class="input-group full-width">
+                <label>YouTube URL</label>
+                <input type="text" id="videoUrl" value="https://www.youtube.com/watch?v=jfKfPfyJRdk" placeholder="URLを貼り付け">
+            </div>
+
+            <div class="input-group">
+                <label>開始時間 (秒)</label>
+                <input type="number" id="startSec" value="0" min="0">
+            </div>
+
+            <div class="input-group">
+                <label>終了時間 (秒) <small>※自動取得されます</small></label>
+                <input type="number" id="endSec" placeholder="読込後に自動入力" step="0.1">
+            </div>
+
+            <button onclick="loadVideo()">動画を読み込んで再生</button>
+        </div>
+
+        <div class="video-container">
+            <div id="player"></div>
+        </div>
+        <div class="status" id="statusMsg">準備完了</div>
     </div>
 
-    <div class="controls">
-        <div class="input-group" style="grid-column: span 2;">
-            <label>動画ID (URLの v= の後ろ)</label>
-            <!-- デフォルト値として猫の動画を入れています -->
-            <input type="text" id="videoId" value="jfKfPfyJRdk" placeholder="例: jfKfPfyJRdk">
-        </div>
-        <div class="input-group">
-            <label>開始時間 (秒)</label>
-            <input type="number" id="startSec" value="0" min="0">
-        </div>
-        <div class="input-group">
-            <label>終了時間 (秒)</label>
-            <input type="number" id="endSec" value="10" min="1">
-        </div>
-        <button onclick="loadAndPlay()">設定して再生 / リロード</button>
-    </div>
-    
-    <div class="status" id="statusText">ステータス: 準備完了</div>
-</div>
+    <script>
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
 
-<script>
-    // YouTube IFrame Player APIを非同期でロード
-    var tag = document.createElement('script');
-    tag.src = "https://www.youtube.com/iframe_api";
-    var firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+        var player;
+        var timerInterval;
+        var shouldUpdateDuration = false; // 新しい動画ロード時に時間を取得するかどうかのフラグ
 
-    var player;
-    var loopInterval;
-
-    // APIの準備ができたらプレイヤーを作成
-    function onYouTubeIframeAPIReady() {
-        player = new YT.Player('player', {
-            height: '360',
-            width: '640',
-            videoId: document.getElementById('videoId').value,
-            playerVars: {
-                'playsinline': 1,
-                'rel': 0 // 関連動画を表示しない
-            },
-            events: {
-                'onReady': onPlayerReady,
-                'onStateChange': onPlayerStateChange
-            }
-        });
-    }
-
-    function onPlayerReady(event) {
-        document.getElementById('statusText').innerText = "ステータス: プレイヤー準備完了";
-    }
-
-    // 再生状態が変わった時の処理
-    function onPlayerStateChange(event) {
-        if (event.data == YT.PlayerState.PLAYING) {
-            startLoopCheck();
-            document.getElementById('statusText').innerText = "ステータス: 再生中 (ループ監視中)";
-        } else {
-            stopLoopCheck();
-            if(event.data == YT.PlayerState.PAUSED) {
-                document.getElementById('statusText').innerText = "ステータス: 一時停止";
-            }
-        }
-    }
-
-    // ボタンクリック時の処理
-    function loadAndPlay() {
-        var vId = document.getElementById('videoId').value;
-        var start = parseFloat(document.getElementById('startSec').value);
-        
-        // IDがURL形式で入力された場合の対応 (簡易的)
-        if(vId.includes('v=')) {
-            vId = vId.split('v=')[1].split('&')[0];
-        } else if (vId.includes('youtu.be/')) {
-            vId = vId.split('youtu.be/')[1].split('?')[0];
-        }
-
-        if (player && player.loadVideoById) {
-            player.loadVideoById({
-                videoId: vId,
-                startSeconds: start
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player', {
+                height: '360',
+                width: '640',
+                videoId: 'jfKfPfyJRdk', // 初期動画
+                playerVars: { 'playsinline': 1 },
+                events: {
+                    'onStateChange': onPlayerStateChange,
+                    'onReady': function(e) {
+                        // 初期ロード時にも時間を取得
+                        shouldUpdateDuration = true;
+                    }
+                }
             });
         }
-    }
 
-    // ループ監視ロジック
-    function startLoopCheck() {
-        // 多重起動防止
-        stopLoopCheck();
-        
-        loopInterval = setInterval(function() {
-            if (!player || !player.getCurrentTime) return;
+        function onPlayerStateChange(event) {
+            var statusMsg = document.getElementById('statusMsg');
 
-            var currentTime = player.getCurrentTime();
-            var start = parseFloat(document.getElementById('startSec').value);
-            var end = parseFloat(document.getElementById('endSec').value);
+            if (event.data == YT.PlayerState.PLAYING) {
+                // 再生開始時にフラグが立っていれば総時間を取得して入力欄に入れる
+                if (shouldUpdateDuration) {
+                    var duration = player.getDuration();
+                    if (duration) {
+                        document.getElementById('endSec').value = Math.floor(duration);
+                        shouldUpdateDuration = false; // 一度セットしたらフラグを下ろす（手動変更を邪魔しないため）
+                    }
+                }
 
-            // 終了時間を超えていたら開始時間に戻す
-            if (end > start && currentTime >= end) {
+                startLoopMonitor();
+                statusMsg.innerText = "状態: 再生中";
+            } 
+            else if (event.data == YT.PlayerState.ENDED) {
+                // 動画が自然に終了した場合、強制的に開始時間に戻す
+                var start = parseFloat(document.getElementById('startSec').value) || 0;
                 player.seekTo(start);
+                player.playVideo();
             }
-        }, 100); // 0.1秒ごとにチェック
-    }
-
-    function stopLoopCheck() {
-        if (loopInterval) {
-            clearInterval(loopInterval);
-            loopInterval = null;
+            else {
+                stopLoopMonitor();
+                statusMsg.innerText = "状態: 停止中";
+            }
         }
-    }
-</script>
 
+        function loadVideo() {
+            var urlInput = document.getElementById('videoUrl').value;
+            var startInput = parseFloat(document.getElementById('startSec').value) || 0;
+            var videoId = extractVideoID(urlInput);
+
+            if (player && videoId) {
+                // 新しい動画を読み込むときは「時間更新フラグ」を立てる
+                shouldUpdateDuration = true;
+                
+                // 終了時間欄を一旦クリア（視覚的にわかりやすくするため）
+                document.getElementById('endSec').value = "";
+
+                player.loadVideoById({
+                    videoId: videoId,
+                    startSeconds: startInput
+                });
+            }
+        }
+
+        // ループ監視（0.1秒ごとにチェック）
+        function startLoopMonitor() {
+            stopLoopMonitor();
+            timerInterval = setInterval(function() {
+                if (!player || !player.getCurrentTime) return;
+
+                var currentTime = player.getCurrentTime();
+                var start = parseFloat(document.getElementById('startSec').value) || 0;
+                var endInput = document.getElementById('endSec').value;
+                
+                // 終了時間が未入力の場合は監視しない（動画の最後まで行く）
+                if (endInput === "") return;
+
+                var end = parseFloat(endInput);
+
+                // 終了時間を超えたら開始時間に戻す
+                // (currentTimeは微妙にズレるので、0.5秒程度のバッファを持たせても良いが今回は厳密に判定)
+                if (end > start && currentTime >= end) {
+                    player.seekTo(start);
+                }
+            }, 100);
+        }
+
+        function stopLoopMonitor() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        function extractVideoID(url) {
+            var videoId = "";
+            if (url.indexOf("v=") !== -1) {
+                videoId = url.split('v=')[1].split('&')[0];
+            } else if (url.indexOf("youtu.be/") !== -1) {
+                videoId = url.split('youtu.be/')[1].split('?')[0];
+            } else {
+                videoId = url;
+            }
+            return videoId;
+        }
+    </script>
 </body>
 </html>
